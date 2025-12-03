@@ -1,6 +1,6 @@
 ﻿Action<TextReader>[] problemSolutions =
 [
-    Day01.Run, Day02.Run
+    Day01.Run, Day02.Run, Day03.Run
 ];
 
 foreach ((int fromIndex, int toIndex) in ProblemIndices())
