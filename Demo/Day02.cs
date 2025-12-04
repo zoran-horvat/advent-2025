@@ -3,57 +3,89 @@ static class Day02
     public static void Run(TextReader reader)
     {
         var ranges = reader.ReadRanges().ToList();
-        var repeatingSplits = ranges.SelectMany(GetNumbers).SelectMany(GetSplit).ToList();
 
-        ulong sumInvalidHalf = repeatingSplits.Where(split => split.PartsCount == 2).Sum();
-        ulong sumInvalidAny = repeatingSplits.Sum();
+        ulong sumInvalidHalf = ranges.Select(SumInvalidIdsHalfCut).Sum();
 
         Console.WriteLine($"Sum of all invalid IDs (half-split): {sumInvalidHalf}");
-        Console.WriteLine($"Sum of all invalid IDs (any split):  {sumInvalidAny}");
     }
 
-    private static ulong Sum(this IEnumerable<Split> splits) =>
-        splits.Aggregate(0UL, (acc, val) => acc + val.Number);
-    
-    private static IEnumerable<Split> GetSplit(this ulong number)
-    {
-        int digitsCount = (int)Math.Ceiling(Math.Log10(number));
+    private static ulong Sum(this IEnumerable<ulong> splits) =>
+        splits.Aggregate(0UL, (acc, val) => acc + val);
 
-        ulong splitPower = (ulong)Math.Pow(10, digitsCount / 2 + 1);
-        for (int groupLength = digitsCount / 2; groupLength > 0; groupLength--)
+    private static ulong SumInvalidIdsHalfCut(this Range range)
+    {
+        if (range.To < range.From) return 0;
+        if (range.DigitsCount % 2 != 0) return 0;
+
+        ulong divisor = (range.DigitsCount / 2).GetDivisor();
+        var segments = range.IsolateSegments(divisor);
+
+        ulong sum = 0;
+
+        foreach (var segment in segments)
         {
-            splitPower /= 10;
-            if (digitsCount % groupLength != 0) continue;
-            if (!number.AllPartsEqual(splitPower)) continue;
-            yield return new Split(number, digitsCount / groupLength);
-            break;
+            ulong from = Math.Max(segment.From / divisor, segment.From % divisor);
+            ulong to = Math.Min(segment.To / divisor, segment.To % divisor);
+
+            if (to < from) continue;
+
+            ulong halfSum = (to * (to + 1) - (from - 1) * from)  / 2;
+            sum += halfSum * divisor + halfSum;
         }
 
+        return sum;
     }
 
-    private static bool AllPartsEqual(this ulong number, ulong splitPower)
+    private static IEnumerable<NumbersRange> IsolateSegments(this Range range, ulong divisor)
     {
-        ulong firstPart = number % splitPower;
-        while (number > 0)
+        ulong fromUp = range.From / divisor;
+        ulong toUp = range.To / divisor;
+
+        if (fromUp == toUp)
         {
-            if ((number % splitPower) != firstPart) return false;
-            number /= splitPower;
+            yield return new NumbersRange(range.From, range.To);
         }
-        return true;
+        else if (fromUp == toUp - 1)
+        {
+            yield return new NumbersRange(range.From, range.From / divisor * divisor + divisor - 1);
+            yield return new NumbersRange((range.From / divisor + 1) * divisor, range.To);
+        }
+        else
+        {
+            yield return new NumbersRange(range.From, (range.From / divisor + 1) * divisor - 1);
+            yield return new NumbersRange((range.From / divisor + 1) * divisor, range.To / divisor * divisor - 1);
+            yield return new NumbersRange(range.To / divisor * divisor, range.To);
+        }
     }
 
-    private static IEnumerable<ulong> GetNumbers(Range range)
-    {
-        for (ulong num = range.From; num <= range.To; num++) yield return num;
-    }
+    private static ulong GetDivisor(this int digitsCount) =>
+        (ulong)Math.Pow(10, digitsCount);
 
     private static IEnumerable<Range> ReadRanges(this TextReader reader) => 
         reader.ReadLines()
             .SelectMany(line => line.Split(','))
             .Where(pair => !string.IsNullOrWhiteSpace(pair))
             .Select(pair => pair.Split('-'))
-            .Select(ends => new Range(ulong.Parse(ends[0]), ulong.Parse(ends[1])));
+            .Select(pair => (from: ulong.Parse(pair[0]), to: ulong.Parse(pair[1])))
+            .SelectMany(ToRanges);
 
+    private static IEnumerable<Range> ToRanges(this (ulong from, ulong to) bounds)
+    {
+        int fromDigits = bounds.from.CountDigits();
+        int toDigits = bounds.to.CountDigits();
+        for (int digits = fromDigits; digits <= toDigits; digits++)
+        {
+            ulong newTo = Math.Min(bounds.to, (ulong)Math.Pow(10, digits) - 1);
+            yield return new Range(bounds.from, newTo, digits);
+            bounds.from = newTo + 1;
+            if (bounds.from > bounds.to) yield break;
+        }
+    }
+
+    private static int CountDigits(this ulong number) =>
+        number == 0 ? 1 : (int)Math.Floor(Math.Log10(number)) + 1;
+
+    record NumbersRange(ulong From, ulong To);
     record Split(ulong Number, int PartsCount);
-    record Range(ulong From, ulong To);
+    record Range(ulong From, ulong To, int DigitsCount);
 }

@@ -1,7 +1,11 @@
 ﻿Action<TextReader>[] problemSolutions =
 [
-    Day01.Run, Day02.Run, Day03.Run
+    Day01.Run, Day02Old.Run, Day03.Run, Day02.Run
 ];
+
+Day02Old.Run(LocateInput(1));
+Day02.Run(LocateInput(1));
+return;
 
 foreach ((int fromIndex, int toIndex) in ProblemIndices())
 {
