@@ -419,3 +419,6 @@ FodyWeavers.xsd
 
 # macOs specific
 .DS_Store
+
+# Input files
+**/Day*.official.txt
