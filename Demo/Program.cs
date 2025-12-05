@@ -1,33 +1,67 @@
-﻿Action<TextReader>[] problemSolutions =
+﻿using System.Text.RegularExpressions;
+
+Action<TextReader>[] problemSolutions =
 [
     Day01.Run, Day02.Run, Day03.Run
 ];
 
 foreach ((int fromIndex, int toIndex) in ProblemIndices())
 {
-    if (fromIndex == toIndex)
-    {
-        problemSolutions[fromIndex](LocateInput(fromIndex));
-        continue;
-    }
-
     for (int i = fromIndex; i <= toIndex; i++)
     {
-        Console.WriteLine($"Day {i + 1}:");
-        Console.WriteLine();
+        if (fromIndex != toIndex)
+        {
+            Console.WriteLine($"Day {i + 1}:");
+            Console.WriteLine();
+        }
 
-        problemSolutions[i](LocateInput(i));
+        var inputs = LocateInputs(i).ToList();
+
+        foreach (var (label, reader) in inputs)
+        {
+            if (inputs.Count > 1) Console.WriteLine($"--- Input: {label} ---");
+            problemSolutions[i](reader);
+            Console.WriteLine();
+        }
         
-        if (i < toIndex) Console.WriteLine(new string('-', 80));
+        if (fromIndex != toIndex && i < toIndex) Console.WriteLine(new string('-', 80));
     }
 }
 
-TextReader LocateInput(int problemIndex) =>
-    Directory.GetFiles(Directory.GetCurrentDirectory(), $"Day{problemIndex + 1:D2}.txt", SearchOption.AllDirectories) switch
+IEnumerable<(string label, TextReader reader)> LocateInputs(int problemIndex)
+{
+    var assembly = typeof(Common).Assembly;
+    string resourcePrefix = $"{assembly.GetName().Name}.Inputs.";
+    string dayPrefix = $"Day{problemIndex + 1:D2}.";
+
+    var resources = assembly
+        .GetManifestResourceNames()
+        .Where(name =>
+            name.StartsWith(resourcePrefix + dayPrefix, StringComparison.OrdinalIgnoreCase) &&
+            name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+        .OrderBy(name => ExtractInputLabel(name, string.Empty), StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    if (resources.Length == 0)
     {
-        [var file, ..] => new StreamReader(file),
-        _ => Console.In
-    };
+        yield return (label: "Standard Input", reader: Console.In);
+        yield break;
+    }
+
+    foreach (var resource in resources)
+    {
+        var stream = assembly.GetManifestResourceStream(resource)
+            ?? throw new InvalidOperationException($"Missing embedded resource '{resource}'.");
+        yield return (ExtractInputLabel(resource, "default"), new StreamReader(stream));
+    }
+}
+
+string ExtractInputLabel(string fileName, string defaultLabel)
+{
+    var match = Regex.Match(fileName, @"Day\d{2}(\.(?<label>.+))?\.txt$");
+    if (match.Success && match.Groups["label"].Value is { Length: > 0 } label) return label;
+    return defaultLabel;
+}
 
 IEnumerable<(int from, int to)> ProblemIndices()
 {

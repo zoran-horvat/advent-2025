@@ -8,10 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Update="Inputs\**\*.*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>Inputs\%(Filename)%(Extension)</TargetPath>
-    </None>
+    <EmbeddedResource Include="Inputs\**\*.*" />
   </ItemGroup>
 
 </Project>

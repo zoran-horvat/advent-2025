@@ -1,19 +1,13 @@
-using System.Diagnostics;
-
 static class Day02
 {
     public static void Run(TextReader reader)
     {
         var ranges = reader.ReadRanges().ToList();
 
-        Stopwatch sw = Stopwatch.StartNew();
-
         var (halfCutSum, allCutsSum) = ranges.SelectMany(range => range.EnumerateInvalidIds()).Sum();
-        sw.Stop();
 
         Console.WriteLine($"Sum of all invalid IDs (half-split): {halfCutSum}");
         Console.WriteLine($"Sum of all invalid IDs (any split):  {allCutsSum}");
-        Console.WriteLine($"Elapsed time: {sw.Elapsed}");
    }
 
    private static (ulong halfCutSum, ulong allCutsSum) Sum(this IEnumerable<(ulong number, bool isHalfSplit)> invalidIds) =>
