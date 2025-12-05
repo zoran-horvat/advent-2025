@@ -4,57 +4,103 @@ static class Day02
     {
         var ranges = reader.ReadRanges().ToList();
 
-        var repeatingSplits = ranges.SelectMany(GetNumbers).SelectMany(GetSplit).ToList();
+        var (halfCutSum, allCutsSum) = ranges.SelectMany(range => range.EnumerateInvalidIds()).Sum();
 
-        ulong sumInvalidHalf = repeatingSplits.Where(split => split.PartsCount == 2).Sum();
-        ulong sumInvalidAny = repeatingSplits.Sum();
+        Console.WriteLine($"Sum of all invalid IDs (half-split): {halfCutSum}");
+        Console.WriteLine($"Sum of all invalid IDs (any split):  {allCutsSum}");
+   }
 
-        Console.WriteLine($"Sum of all invalid IDs (half-split): {sumInvalidHalf}");
-        Console.WriteLine($"Sum of all invalid IDs (any split):  {sumInvalidAny}");
-    }
+   private static (ulong halfCutSum, ulong allCutsSum) Sum(this IEnumerable<(ulong number, bool isHalfSplit)> invalidIds) =>
+        invalidIds.Aggregate((halfCutSum: 0UL, allCutsSum: 0UL), (acc, t) => (
+            t.isHalfSplit ? acc.halfCutSum + t.number : acc.halfCutSum,
+            acc.allCutsSum + t.number));
 
-    public static ulong Sum(this IEnumerable<Split> splits) =>
-        splits.Aggregate(0UL, (acc, val) => acc + val.Number);
-    
-    public static IEnumerable<Split> GetSplit(this ulong number)
+    private static IEnumerable<(ulong number, bool isHalfSplit)> EnumerateInvalidIds(this Range range)
     {
-        int digitsCount = (int)Math.Ceiling(Math.Log10(number));
-
-        ulong splitPower = (ulong)Math.Pow(10, digitsCount / 2 + 1);
-        for (int groupLength = digitsCount / 2; groupLength > 0; groupLength--)
+        List<(bool isHalfSplit, IEnumerator<ulong> enumerator)> candidates = new();
+        for (int groupSize = 1; groupSize <= range.DigitsCount / 2; groupSize++)
         {
-            splitPower /= 10;
-            if (digitsCount % groupLength != 0) continue;
-            if (!number.AllPartsEqual(splitPower)) continue;
-            yield return new Split(number, digitsCount / groupLength);
-            break;
+            if (range.DigitsCount % groupSize != 0) continue;
+            var enumerator = range.EnumerateInvalidIds(groupSize).GetEnumerator();
+            if (enumerator.MoveNext()) candidates.Add((range.DigitsCount % 2 == 0 && groupSize == range.DigitsCount / 2, enumerator));
         }
 
-    }
-
-    public static bool AllPartsEqual(this ulong number, ulong splitPower)
-    {
-        ulong firstPart = number % splitPower;
-        while (number > 0)
+        while (candidates.Count > 0)
         {
-            if ((number % splitPower) != firstPart) return false;
-            number /= splitPower;
+            ulong minNumber = candidates.Min(c => c.enumerator.Current);
+            bool isHalfSplit = candidates.Any(c => c.isHalfSplit && c.enumerator.Current == minNumber);
+            yield return (minNumber, isHalfSplit);
+
+            candidates = candidates
+                .Where(c => c.enumerator.Current != minNumber || c.enumerator.MoveNext())
+                .ToList();
         }
-        return true;
     }
 
-    public static IEnumerable<ulong> GetNumbers(this Range range)
+    private static IEnumerable<ulong> EnumerateInvalidIds(this Range range, int groupSize)
     {
-        for (ulong num = range.From; num <= range.To; num++) yield return num;
+        if (range.DigitsCount % groupSize != 0) yield break;
+
+        ulong divisor = groupSize.GetDivisor();
+        var segments = range.ToSegments(divisor).Reverse().ToList();
+
+        var mostSignificantSegment = segments[0];
+        for (ulong seed = mostSignificantSegment.From; seed <= mostSignificantSegment.To; seed++)
+        {
+            int lowEndsCount = segments.TakeWhile(s => s.From == seed).Count();
+            if (lowEndsCount < segments.Count && segments[lowEndsCount].From > seed) continue;
+
+            int highEndsCount = segments.TakeWhile(s => s.To == seed).Count();
+            if (highEndsCount < segments.Count && segments[highEndsCount].To < seed) continue;
+
+            ulong number = segments.Aggregate(0UL, (acc, seg) => acc + seed * seg.Multiplier);
+            yield return number;
+        }
     }
+
+    private static IEnumerable<Segment> ToSegments(this Range range, ulong divisor)
+    {
+        ulong from = range.From;
+        ulong to = range.To;
+
+        ulong multiplier = 1;
+        while (true)
+        {
+            yield return new Segment(from % divisor, to % divisor, multiplier);
+            from /= divisor;
+            to /= divisor;
+            if (from == 0 && to == 0) yield break;
+            multiplier *= divisor;
+        }
+    }
+
+    private static ulong GetDivisor(this int digitsCount) =>
+        (ulong)Math.Pow(10, digitsCount);
 
     private static IEnumerable<Range> ReadRanges(this TextReader reader) => 
         reader.ReadLines()
             .SelectMany(line => line.Split(','))
             .Where(pair => !string.IsNullOrWhiteSpace(pair))
             .Select(pair => pair.Split('-'))
-            .Select(ends => new Range(ulong.Parse(ends[0]), ulong.Parse(ends[1])));
+            .Select(pair => (from: ulong.Parse(pair[0]), to: ulong.Parse(pair[1])))
+            .SelectMany(ToRanges);
 
-    public record Split(ulong Number, int PartsCount);
-    public record Range(ulong From, ulong To);
+    private static IEnumerable<Range> ToRanges(this (ulong from, ulong to) bounds)
+    {
+        int fromDigits = bounds.from.CountDigits();
+        int toDigits = bounds.to.CountDigits();
+        for (int digits = fromDigits; digits <= toDigits; digits++)
+        {
+            ulong newTo = Math.Min(bounds.to, (ulong)Math.Pow(10, digits) - 1);
+            yield return new Range(bounds.from, newTo, digits);
+            bounds.from = newTo + 1;
+            if (bounds.from > bounds.to) yield break;
+        }
+    }
+
+    private static int CountDigits(this ulong number) =>
+        number == 0 ? 1 : (int)Math.Floor(Math.Log10(number)) + 1;
+
+    record Segment(ulong From, ulong To, ulong Multiplier);
+    record Range(ulong From, ulong To, int DigitsCount);
 }
