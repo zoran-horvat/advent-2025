@@ -3,7 +3,8 @@ using System.Text.RegularExpressions;
 
 Action<TextReader>[] problemSolutions =
 [
-    Day01.Run, Day02.Run, Day03.Run, Day04.Run
+    Day01.Run, Day02.Run, Day03.Run, Day04.Run,
+    Day05.Run
 ];
 
 foreach ((int fromIndex, int toIndex) in ProblemIndices())
