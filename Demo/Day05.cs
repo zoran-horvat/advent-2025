@@ -52,6 +52,5 @@ static class Day05
     private static Range ToRange(this string[] bounds) =>
         new Range(ulong.Parse(bounds[0]), ulong.Parse(bounds[1]));
 
-
     record Range(ulong From, ulong To);
 }
