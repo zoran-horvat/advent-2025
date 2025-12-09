@@ -1,3 +1,5 @@
+using System.Linq.Expressions;
+
 static class Day09
 {
     public static void Run(TextReader reader)
@@ -5,12 +7,14 @@ static class Day09
         var points = reader.ReadPoints().ToList();
         var index = points.ToClockwiseSegments().ToIndex();
 
+        points.Draw(index, 40);
+
         var maxAreaAny = points.GetMaxArea();
         var maxAreaInside = points.GetMaxArea(index);
 
-        points.Draw(index, 40);
-
         // 4582310446 too high
+        // 2976014041 - not
+        // 137489982 - not
         Console.WriteLine($"Largest area of any rectangle:      {maxAreaAny}");
         Console.WriteLine($"Largest area of an inner rectangle: {maxAreaInside}");
     }
@@ -52,9 +56,9 @@ static class Day09
             for (int x = minX; x <= maxX; x++)
             {
                 var point = new Point(x, y);
-                if (set.Contains(point) && index.Contains(point)) Console.Write('O');
+                if (set.Contains(point) && index.IsInside(point)) Console.Write('O');
                 else if (set.Contains(point)) Console.Write('#');
-                else if (index.Contains(point)) Console.Write('X');
+                else if (index.IsInside(point)) Console.Write('X');
                 else Console.Write('.');
             }
             Console.WriteLine();
@@ -66,33 +70,80 @@ static class Day09
 
     private static long GetMaxArea(this List<Point> points, Index index)
     {
-        long maxArea = 0;
-
-        foreach (var pair in points.GetAllPairs().Select(GetOtherCorners))
+        var rectangles = points.GetAllPairs().OrderByDescending(GetArea);
+        
+        foreach (var pair in rectangles.Select((rect, index) => (rect, index)))
         {
-            var newArea = pair.GetArea();
-            if (newArea <= maxArea) continue;
-            if (index.Contains(pair)) maxArea = newArea;
+            Console.WriteLine($"Checking rect #{pair.index + 1} / {points.Count * (points.Count - 1) / 2} - {pair.rect.GetArea()} area Mem={GC.GetTotalMemory(false) / 1024 / 1024}MB");
+            if (index.IsInside(pair.rect)) return pair.rect.GetArea();
         }
-
-        return maxArea;
+        throw new ArgumentException("No rectangle found inside the shape.");
     }
 
-    private static (Point a, Point b) GetOtherCorners(this (Point a, Point b) pair) =>
-        (new Point(pair.a.X, pair.b.Y), new Point(pair.b.X, pair.a.Y));
+    // {
+    //     long maxArea = 0;
 
-    private static bool Contains(this Index index, (Point a, Point b) pair) =>
-        index.Contains(pair.a) && index.Contains(pair.b);
+    //     foreach (var pair in points.GetAllPairs().Select((pair, index) => (pair, index)))
+    //     {
+    //         // if ((pair.index + 1) % 1000 == 0)
+    //             Console.WriteLine($"Checked {pair.index + 1} / {points.Count * (points.Count - 1) / 2} - Current max area: {maxArea} Mem={GC.GetTotalMemory(false) / 1024 / 1024}MB");
+    //         var newArea = pair.pair.GetArea();
+    //         if (newArea <= maxArea) continue;
+    //         if (index.IsInside(pair.pair)) maxArea = newArea;
+    //     }
 
-    private static bool Contains(this Index index, Point point) =>
-        index.ShapesByX.TryGetValue(point.X, out var shapeSegments) &&
-        shapeSegments.Where(shape => shape.MaxY >= point.Y).Sum(shape => shape.Change) > 0;
+    //     return maxArea;
+    // }
+
+    private static bool IsInside(this Index index, (Point a, Point b) rectangle)
+    {
+        var minX = Math.Min(rectangle.a.X, rectangle.b.X);
+        var maxX = Math.Max(rectangle.a.X, rectangle.b.X);
+        var minY = Math.Min(rectangle.a.Y, rectangle.b.Y);
+        var maxY = Math.Max(rectangle.a.Y, rectangle.b.Y);
+
+        int pointsChecked = 0;
+        for (int x = minX; x <= maxX; x++)
+        {
+            if (!index.Contains(x, minY, maxY)) return false;
+            if (++pointsChecked % 1000 == 0) Console.WriteLine($"  Checked {pointsChecked} x-columns / {maxX - minX + 1}");
+        }
+
+        return true;
+    }
+
+    private static bool IsInside(this Index index, Point point) =>
+        index.Contains(point.X, point.Y, point.Y);
+
+    private static bool Contains(this Index index, int x, int fromY, int toY)
+    {
+        if (x == 10 && fromY == 1 && toY == 1)
+        {
+            int f = 0;
+        }
+        if (!index.ShapesByX.TryGetValue(x, out var shapeSegments)) return false;
+
+        var segments = shapeSegments.ToList();
+        if (segments.All(seg => seg.MaxY < toY)) return false;
+
+        var coverage = 0;
+        var lastStepOut = 0;
+        foreach (var seg in segments)
+        {
+            if (seg.MaxY + 1 >= fromY && seg.MaxY + 1 <= toY && coverage <= 0) return false;
+            coverage += seg.Change;
+            if (seg.MaxY >= fromY && seg.MaxY <= toY && coverage <= 0) return false;
+            if (coverage <= 0) lastStepOut = seg.MaxY;
+        }
+
+        return lastStepOut < fromY;
+    }
 
     private static Index ToIndex(this IEnumerable<Segment> segments) =>
         new Index(segments.GetHorizontalDiscriminators()
             .SelectMany(ToShapeSegments)
             .GroupBy(item => item.x)
-            .ToDictionary(g => g.Key, g => g.Select(item => item.shape).ToList()));
+            .ToDictionary(g => g.Key, g => g.Select(item => item.shape).OrderByDescending(shape => shape.MaxY).ToList()));
 
     private static IEnumerable<(int x, ShapeSegment shape)> ToShapeSegments(this Segment segment) =>
         Enumerable.Range(Math.Min(segment.To.X, segment.From.X), Math.Abs(segment.To.X - segment.From.X) + 1)
