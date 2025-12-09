@@ -4,34 +4,36 @@ static class Day04
     {
         var map = reader.ReadMap();
 
-        var accessibleRolls = map.Rolls.Select(pos => map.CountSurroundingRolls(pos)).Count(count => count < 4);
-        var removableCount = map.CountTotalRemovableRolls();
+        var (immediateRemovable, totalRemovable) = map.CountRemovableRolls();
 
-        Console.WriteLine($"Number of accessible rolls: {accessibleRolls}");
-        Console.WriteLine($"Number of removable rolls:  {removableCount}");
+        Console.WriteLine($"Optimized immediate: {immediateRemovable}");
+        Console.WriteLine($"Optimized total:     {totalRemovable}");
     }
 
-    private static int CountTotalRemovableRolls(this Map map)
+    private static (int immediate, int total) CountRemovableRolls(this Map map)
     {
-        HashSet<Position> rolls = map.Rolls.ToHashSet();
-        int originalRollsCount = rolls.Count;
+        var neighborsCount = map.Rolls.ToDictionary(roll => roll, roll => map.Neighbors[roll].Count(map.Rolls.Contains));
+        var pending = new Queue<Position>(neighborsCount.Where(kv => kv.Value < 4).Select(kv => kv.Key));
+        var remaining = map.Rolls.Except(pending).ToHashSet();
 
-        while (true)
+        var immediate = pending.Count;
+        var total = immediate;
+
+        while (pending.TryDequeue(out var roll))
         {
-            var removable = rolls
-                .Where(roll => map.Neighbors[roll].Where(rolls.Contains).Count() < 4)
-                .ToList();
-
-            if (removable.Count == 0) break;
-
-            foreach (var roll in removable) rolls.Remove(roll);
+            foreach (var neighbor in map.Neighbors[roll].Where(remaining.Contains))
+            {
+                if (--neighborsCount[neighbor] < 4)
+                {
+                    pending.Enqueue(neighbor);
+                    remaining.Remove(neighbor);
+                    total++;
+                }
+            }
         }
 
-        return originalRollsCount - rolls.Count;
+        return (immediate, total);
     }
-
-    private static int CountSurroundingRolls(this Map map, Position position) =>
-        map.Neighbors[position].Count(map.Rolls.Contains);
     
     private static Map ReadMap(this TextReader reader)
     {
