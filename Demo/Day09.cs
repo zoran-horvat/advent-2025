@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Microsoft.VisualBasic;
 
 static class Day09
 {
@@ -25,18 +26,20 @@ static class Day09
 
         if (maxX - minX > maxSize || maxY - minY > maxSize) return;
         
-        var shapes = points.ToList()
-            .ToClockwiseSegments()
+        var discriminators = points.ToList()
+            .ToClockwiseLines()
             .GetHorizontalDiscriminators()
-            .SelectMany(ToShapeSegments);
+            .OrderByDescending(discriminator => discriminator switch 
+            {
+                EnterAt enterAt => enterAt.Line.Y,
+                ExitBelow enterBelow => enterBelow.Line.Y - 1,
+                _ => throw new ArgumentException("Unknown discriminator type.")
+            })
+            .ToList();
 
-        bool IsInside(Point point) =>
-            shapes
-                .Where(discriminator => discriminator.x == point.X)
-                .Select(discriminator => discriminator.shape)
-                .Where(shape => shape.MaxY >= point.Y)
-                .OrderByDescending(shape => shape.MaxY)
-                .LastOrDefault() is ShapeSegment shape && shape.Change > 0;
+        discriminators.Select(ToLabel).ToList().ForEach(Console.WriteLine);
+
+        bool IsInside(Point point) => discriminators.Where(d => d.Affects(point)).LastOrDefault() is EnterAt;
 
         Console.WriteLine($"({minX},{minY})");
         for (int y = minY; y <= maxY; y++)
@@ -53,60 +56,103 @@ static class Day09
         }
     }
 
-    private static IEnumerable<(int x, ShapeSegment shape)> ToShapeSegments(this Segment segment) =>
-        Enumerable.Range(Math.Min(segment.To.X, segment.From.X), Math.Abs(segment.To.X - segment.From.X) + 1)
-            .Select(x => (x, segment.ToShapeSegment()));
-
-    private static ShapeSegment ToShapeSegment(this Segment segment) =>
-        segment.To.X > segment.From.X ? new ShapeSegment(segment.From.Y, 1)
-        : new ShapeSegment(segment.To.Y - 1, -1);
-
-    private static IEnumerable<Segment> GetHorizontalDiscriminators(this IEnumerable<Segment> segments)
+    private static string ToLabel(this Discriminator discriminator) => discriminator switch
     {
-        var horizontal = segments.Where(seg => seg.From.Y == seg.To.Y).ToList();
+        EnterAt enterAt => $"EnterAt Y={enterAt.Line.Y} X=[{enterAt.Line.FromX}..{enterAt.Line.ToX}]",
+        ExitBelow exitBelow => $"ExitBelow Y={exitBelow.Line.Y} X=[{exitBelow.Line.FromX}..{exitBelow.Line.ToX}]",
+        _ => "Unknown discriminator"
+    };
+
+    private static IEnumerable<Discriminator> GetHorizontalDiscriminators(this IEnumerable<Line> segments)
+    {
+        var horizontal = segments.OfType<HorizontalLine>().ToList();
+        var points = horizontal.Select(GetPoints).ToList();
 
         for (int i = 0; i < horizontal.Count; i++)
         {
+            var prev = horizontal[(i + horizontal.Count - 1) % horizontal.Count];
             var current = horizontal[i];
             var next = horizontal[(i + 1) % horizontal.Count];
+            var endpoints = current.GetPoints().ToArray();
+            
+            var discriminatorLine = (prev, current, next) switch
+            {
+                (HorizontalLine p, Right c, HorizontalLine n) when c.Y > p.Y && c.Y < n.Y => c.WithoutLastPoint(),
+                (HorizontalLine p, Right c, HorizontalLine n) when c.Y > p.Y && c.Y > p.Y => c,
+                (HorizontalLine p, Right c, HorizontalLine n) when c.Y < p.Y && c.Y < n.Y => c.WithoutFirstPoint().WithoutLastPoint(),
+                (HorizontalLine p, Right c, HorizontalLine n) when c.Y < p.Y && c.Y > n.Y => c.WithoutFirstPoint(),
+                (HorizontalLine p, Left c, HorizontalLine n) when c.Y > p.Y && c.Y < n.Y => c.WithoutFirstPoint(),
+                (HorizontalLine p, Left c, HorizontalLine n) when c.Y > p.Y && c.Y > p.Y => c.WithoutFirstPoint().WithoutLastPoint(),
+                (HorizontalLine p, Left c, HorizontalLine n) when c.Y < p.Y && c.Y < n.Y => c,
+                (HorizontalLine p, Left c, HorizontalLine n) when c.Y < p.Y && c.Y > n.Y => c.WithoutLastPoint(),
+                _ => throw new InvalidOperationException("Cannot determine discriminator type.")
+            };
 
-            if (current.To.X != next.From.X) continue;
-
-            var currentStep = Math.Sign(current.To.X - current.From.X);
-            var nextStep = Math.Sign(next.To.X - next.From.X);
-
-            var currentChange = 0;
-            var nextChange = 0;
-
-            var currentY = current.From.Y;
-            var nextY = next.From.Y;
-
-            if (currentStep > 0 && nextStep > 0 && currentY > nextY) nextChange = currentStep;
-            else if (currentStep > 0 && nextStep > 0) currentChange = -currentStep;
-            else if (currentStep > 0 && nextStep < 0 && currentY <= nextY) (currentChange, nextChange) = ( -currentStep, -currentStep);
-            else if (currentStep < 0 && nextStep < 0 && currentY > next.To.Y) currentChange = -currentStep;
-            else if (currentStep < 0 && nextStep < 0) nextChange = currentStep;
-            else if (currentStep < 0 && nextStep > 0 && currentY > nextY) (currentChange, nextChange) = ( -currentStep, -currentStep);
-
-            horizontal[i] = new Segment(current.From, new Point(current.To.X + currentChange, current.To.Y));
-            horizontal[(i + 1) % horizontal.Count] = new Segment(new Point(next.From.X + nextChange, next.From.Y), next.To);
+            yield return discriminatorLine.ToDiscriminator(endpoints);
         }
-
-        return horizontal;
     }
 
-    private static IEnumerable<Segment> ToClockwiseSegments(this List<Point> points)
+    private static Discriminator ToDiscriminator(this Line line, Point[] points) => line switch
     {
-        var segments = points.ToSegments().ToList();
-        var topMostSegment = segments.Where(segment => segment.From.Y == segment.To.Y).MaxBy(segment => segment.From.Y);
+        Right r => new EnterAt(r, points),
+        Left l => new ExitBelow(l.Reverse(), points),
+        _ => throw new ArgumentException("Only horizontal lines can be converted to discriminators.")
+    };
 
-        if (topMostSegment is null || topMostSegment.From.X < topMostSegment.To.X) return segments;
+    private static bool Affects(this Discriminator discriminator, Point point) => discriminator switch
+    {
+        EnterAt enterAt => point.Y <= enterAt.Line.Y && point.X >= enterAt.Line.FromX && point.X <= enterAt.Line.ToX,
+        ExitBelow exitBelow => point.Y < exitBelow.Line.Y && point.X >= exitBelow.Line.FromX && point.X <= exitBelow.Line.ToX,
+        _ => false
+    };
 
-        return ((IEnumerable<Point>)points).Reverse().ToList().ToSegments();
+    private static Right Reverse(this Left line) => new Right(line.Y, line.ToX, line.FromX);
+
+    private static Line WithoutFirstPoint(this Line line) => line switch
+    {
+        Right r => new Right(r.Y, r.FromX + 1, r.ToX),
+        Left l => new Left(l.Y, l.FromX - 1, l.ToX),
+        Up u => new Up(u.X, u.FromY + 1, u.ToY),
+        Down d => new Down(d.X, d.FromY - 1, d.ToY),
+        _ => line
+    };
+
+    private static Line WithoutLastPoint(this Line line) => line switch
+    {
+        Right r => new Right(r.Y, r.FromX, r.ToX - 1),
+        Left l => new Left(l.Y, l.FromX, l.ToX + 1),
+        Up u => new Up(u.X, u.FromY, u.ToY - 1),
+        Down d => new Down(d.X, d.FromY, d.ToY + 1),
+        _ => line
+    };
+
+    private static Point[] GetPoints(this Line line) => line switch
+    {
+        Right r => [new Point(r.FromX, r.Y), new Point(r.ToX, r.Y)],
+        Left l => [new Point(l.FromX, l.Y), new Point(l.ToX, l.Y)],
+        Up u => [new Point(u.X, u.FromY), new Point(u.X, u.ToY)],
+        Down d => [new Point(d.X, d.FromY), new Point(d.X, d.ToY)],
+        _ => throw new ArgumentException("Unknown line type.")
+    };
+
+    private static IEnumerable<Line> ToClockwiseLines(this List<Point> points)
+    {
+        var segments = points.ToLines().ToList();
+        var topMostSegments = segments.OfType<HorizontalLine>().MaxBy(line => line.Y);
+
+        if (topMostSegments is Right) return segments;
+
+        return ((IEnumerable<Point>)points).Reverse().ToList().ToLines();
     }
 
-    private static IEnumerable<Segment> ToSegments(this List<Point> points) =>
-        points.Zip(points[1..].Concat([points[0]]), (from, to) => new Segment(from, to));
+    private static IEnumerable<Line> ToLines(this List<Point> points) =>
+        points.Zip(points[1..].Concat([points[0]]), (from, to) => from.LineTo(to));
+
+    private static Line LineTo(this Point from, Point to) =>
+        from.Y == to.Y && from.X < to.X ? new Right(from.Y, from.X, to.X)
+        : from.Y == to.Y ? new Left(from.Y, from.X, to.X)
+        : from.Y < to.Y ? new Up(from.X, from.Y, to.Y)
+        : new Down(from.X, from.Y, to.Y);
 
     private static IEnumerable<Point> ReadPoints(this TextReader reader) =>
         reader.ReadLines()
@@ -115,6 +161,18 @@ static class Day09
 
     record Index(Dictionary<int, List<ShapeSegment>> ShapesByX);
     record ShapeSegment(int MaxY, int Change);
-    record Segment(Point From, Point To);
+
+    abstract record Discriminator;
+    record EnterAt(Right Line, Point[] Points) : Discriminator;
+    record ExitBelow(Right Line, Point[] Points) : Discriminator;
+    
+    abstract record Line;
+    abstract record HorizontalLine(int Y) : Line;
+    record Right(int Y, int FromX, int ToX) : HorizontalLine(Y);
+    record Left(int Y, int FromX, int ToX) : HorizontalLine(Y);
+    record Up(int X, int FromY, int ToY) : Line;
+    record Down(int X, int FromY, int ToY) : Line;
+
+
     record Point(int X, int Y);
 }
