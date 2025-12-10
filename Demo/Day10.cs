@@ -15,7 +15,8 @@ static class Day10
     {
         var maxIndicators = new Indicators(machine.Buttons.Aggregate(0, (acc, button) => acc | button.Toggles));
         
-        var minCounts = Enumerable.Repeat(int.MaxValue, maxIndicators.Bits + 1).ToArray();
+        var infinite = int.MaxValue;
+        var minCounts = Enumerable.Repeat(infinite, maxIndicators.Bits + 1).ToArray();
         minCounts[0] = 0;
 
         var reached = new HashSet<Indicators> { new Indicators(0) };
@@ -35,7 +36,9 @@ static class Day10
             reached = newReached;
         }
 
-        return minCounts[machine.Indicators.Bits];
+        if (minCounts[machine.Indicators.Bits] < infinite) return minCounts[machine.Indicators.Bits];
+
+        throw new InvalidDataException("Cannot reach target indicators with available buttons.");
     }
 
     private static Indicators Apply(this Indicators indicators, Button button) =>
