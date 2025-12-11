@@ -62,8 +62,35 @@ static class Day09
     private static long GetArea((Point a, Point b) pair) =>
         Math.Abs((long)(pair.a.X - pair.b.X + 1) * (pair.a.Y - pair.b.Y + 1));
 
+    private static bool CrossesItself(this IEnumerable<Point> points)
+    {
+        var list = points.ToList();
+        var segments = list.Zip(list[1..].Concat([list[0]]), (from, to) => (from, to)).ToList();
+
+        IEnumerable<Point> getPoints((Point from, Point to) line)
+        {
+            var dx = Math.Sign(line.to.X - line.from.X);
+            var dy = Math.Sign(line.to.Y - line.from.Y);
+
+            var point = line.from;
+            while (point != line.to)
+            {
+                point = new Point(point.X + dx, point.Y + dy);
+                yield return point;
+            }
+        }
+
+        var allPoints = segments.SelectMany(getPoints).ToList();
+        var distinctPoints = allPoints.Distinct().ToList();
+
+        return allPoints.Count != distinctPoints.Count;
+    }
+
     private static void Draw(this IEnumerable<Point> points, int maxSize)
     {
+        bool crossesItself = points.CrossesItself();
+        Console.WriteLine($"Checking self-crossing: {(crossesItself ? "FOUND" : "not found")}");
+
         var set = points.ToHashSet();
         int minX = 0;
         int maxX = set.Max(p => p.X) + 2;
@@ -81,6 +108,7 @@ static class Day09
         Console.WriteLine($"({minX},{minY})");
         for (int y = minY; y <= maxY; y++)
         {
+            Console.Write($"y={y,3} ");
             for (int x = minX; x <= maxX; x++)
             {
                 var point = new Point(x, y);
