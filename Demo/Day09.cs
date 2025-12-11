@@ -10,11 +10,21 @@ static class Day09
         // 2976014041 - not
         // 137489982 - not
         // 1448987856 - not
+        // 1362708695 - not (brute force)
         var maxArea = points.GetMaxArea();
-        var maxInternalArea = points.GetMaxInternalArea();
 
-        Console.WriteLine($"Largest rectangle area:          {maxArea}");
-        Console.WriteLine($"Largest internal rectangle area: {maxInternalArea}");
+        System.Diagnostics.Stopwatch swBruteForce = System.Diagnostics.Stopwatch.StartNew();
+        var maxInternalAreaBruteForce = points.GetMaxInternalAreaBruteForce();
+        swBruteForce.Stop();
+
+        System.Diagnostics.Stopwatch swOptimized = System.Diagnostics.Stopwatch.StartNew();
+        var maxInternalArea = points.GetMaxInternalArea();
+        swOptimized.Stop();
+
+
+        Console.WriteLine($"Largest rectangle area:                        {maxArea}");
+        Console.WriteLine($"Largest internal rectangle area (brute force): {maxInternalAreaBruteForce} ({swBruteForce.Elapsed})");
+        Console.WriteLine($"Largest internal rectangle area:               {maxInternalArea} ({swOptimized.Elapsed})");
     }
 
     private static long GetMaxArea(this List<Point> points)
@@ -65,7 +75,7 @@ static class Day09
         
         var discriminators = points.GetDiscriminatorsFromTop().ToList();
 
-        bool IsInside(Point point) => discriminators.Where(d => d.Affects(point)).LastOrDefault() is EnterAt;
+        bool isInside(Point point) => discriminators.Where(d => d.Affects(point)).LastOrDefault() is EnterAt;
 
         Console.WriteLine($"({minX},{minY})");
         for (int y = minY; y <= maxY; y++)
@@ -73,9 +83,9 @@ static class Day09
             for (int x = minX; x <= maxX; x++)
             {
                 var point = new Point(x, y);
-                if (set.Contains(point) && IsInside(point)) Console.Write('O');
+                if (set.Contains(point) && isInside(point)) Console.Write('O');
                 else if (set.Contains(point)) Console.Write('#');
-                else if (IsInside(point)) Console.Write('X');
+                else if (isInside(point)) Console.Write('X');
                 else Console.Write('.');
             }
             Console.WriteLine();
@@ -88,6 +98,62 @@ static class Day09
         ExitBelow exitBelow => $"ExitBelow Y={exitBelow.Line.Y} X=[{exitBelow.Line.FromX}..{exitBelow.Line.ToX}]",
         _ => "Unknown discriminator"
     };
+
+    private static long GetMaxInternalAreaBruteForce(this List<Point> points)
+    {
+        var discriminatorsFromTop = points.GetDiscriminatorsFromTop().ToList();
+        var discriminatorsFromBotton = discriminatorsFromTop.AsEnumerable().Reverse().ToList();
+
+        var candidates = points.GetAllPairs().OrderByDescending(GetArea);
+
+        foreach (var (a, b) in candidates)
+        {
+            var fromX = Math.Min(a.X, b.X);
+            var toX = Math.Max(a.X, b.X);
+            var fromY = Math.Min(a.Y, b.Y);
+            var toY = Math.Max(a.Y, b.Y);
+
+            var containsExitLine = discriminatorsFromTop.OfType<ExitBelow>()
+                .Where(d => d.Line.Y <= toY && d.Line.Y >= fromY)
+                .Where(d => !(d.Line.ToX < fromX || d.Line.FromX > toX))
+                .Any();
+            
+            if (containsExitLine) continue;
+
+            var discriminatorsAbove = discriminatorsFromTop
+                .Select(d => d switch
+                {
+                    EnterAt enterAt => (line: enterAt.Line, change: +1),
+                    ExitBelow exitBelow => (line: exitBelow.Line with { Y = exitBelow.Line.Y - 1 }, change: -1),
+                    _ => throw new InvalidOperationException("Unknown discriminator type.")
+                })
+                .Where(d => d.line.Y >= toY && d.line.ToX >= fromX && d.line.FromX <= toX)
+                .OrderBy(d => d.line.Y)
+                .ToList();
+
+            var criticalPoints = discriminatorsAbove
+                .SelectMany(d => new Point[] { new Point(d.line.FromX, toY), new Point(d.line.ToX, toY) })
+                .Concat(new Point[] { new Point(fromX, toY), new Point(toX, toY) })
+                .Where(p => p.X >= fromX && p.X <= toX)
+                .Distinct();
+
+            bool isInside(Point point)
+            {
+                foreach (var d in discriminatorsAbove.Where(discriminator => discriminator.line.FromX <= point.X && discriminator.line.ToX >= point.X))
+                {
+                    if (d.change < 0) return false;
+                    if (d.change > 0) return true;
+                }
+                return false;
+            }
+
+            if (criticalPoints.Any(p => !isInside(p))) continue;
+
+            return GetArea((a, b));
+        }
+
+        return 0;
+    }
 
     private static long GetMaxInternalArea(this List<Point> points)
     {
