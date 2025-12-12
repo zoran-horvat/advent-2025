@@ -158,9 +158,14 @@ static class Day09
                 .Distinct()
                 .ToList();
 
-            var y = discriminator.GetPoints().Max(p => p.Y);
-            var printableStripes = stripes.OrderBy(s => s.Top.FromX).ToList();
-            if (report) Console.WriteLine($"y={y,-3} Stripes: {string.Join(", ", printableStripes.Select(s => s.ToLabel()))}");
+            var y = discriminator switch
+            {
+                EnterAt enterAt => enterAt.Line.Y,
+                ExitBelow exitBelow => exitBelow.Line.Y - 1,
+                _ => throw new ArgumentException("Unknown discriminator type.")
+            };
+            var printableStripes = stripes.OrderBy(s => s.Pivot.X).ThenByDescending(s => s.Pivot.Y).ThenBy(s => s.Top.FromX).ToList();
+            if (report) Console.WriteLine($"y={y,-3} {discriminator.ToLabel(),-30} | Stripes: {string.Join(", ", printableStripes.Select(s => s.ToLabel()))}");
         }
 
         return maxArea;
@@ -175,15 +180,31 @@ static class Day09
 
     private static IEnumerable<Stripe> CloseStripe(this Stripe stripe, ExitBelow discriminator)
     {
-        if (discriminator.Line.FromX <= stripe.Pivot.X && discriminator.Line.ToX >= stripe.Pivot.X) yield break;        // Discriminator removes pivot
+        if (discriminator.Line.FromX <= stripe.Pivot.X && discriminator.Line.ToX >= stripe.Pivot.X)
+        {
+            // Console.WriteLine($"    Removing stripe {stripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
+            yield break;        // Discriminator removes pivot
+        }
         else if (discriminator.Line.ToX < stripe.Top.FromX) yield return stripe;
         else if (discriminator.Line.FromX > stripe.Top.ToX) yield return stripe;
-        else if (discriminator.Line.FromX <= stripe.Top.ToX) yield return stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
-        else if (discriminator.Line.ToX >= stripe.Top.FromX) yield return stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
+        else if (discriminator.Line.FromX <= stripe.Top.ToX)
+        {
+            var newStripe = stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
+            // Console.WriteLine($"    Clipping stripe {stripe.ToLabel()} -> {newStripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
+            yield return newStripe;
+        }
+        else if (discriminator.Line.ToX >= stripe.Top.FromX)
+        {
+            var newStripe = stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
+            // Console.WriteLine($"    Clipping stripe {stripe.ToLabel()} -> {newStripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
+            yield return newStripe;
+        }
     }
 
     private static IEnumerable<Stripe> ToNewStripes(this Discriminator discriminator, IEnumerable<Stripe> existingStripes) => discriminator switch
     {
+        // (9,20) [9-23] -> Must also generate (9,20) [3-9]
+        // ()
         EnterAt enterAt => enterAt.ToNewStripes(existingStripes),
         ExitBelow exitBelow => exitBelow.ToNewStripes(existingStripes),
         _ => Enumerable.Empty<Stripe>()
@@ -204,17 +225,17 @@ static class Day09
 
     private static IEnumerable<Stripe> ToNewStripes(this EnterAt discriminator, IEnumerable<Stripe> existingStripes)
     {
-        Right top = discriminator.Line;
-        foreach (var stripeTop in existingStripes.Select(s => s.Top).Where(t => t.Y > top.Y))
+        Right top = new Right(discriminator.Line.Y, discriminator.Points.Min(p => p.X), discriminator.Points.Max(p => p.X));
+        foreach (var stripeTop in existingStripes.Select(s => s.Top).Where(t => t.Y >= top.Y))
         {
-            if (stripeTop.FromX < top.FromX && stripeTop.ToX >= top.FromX - 1) top = top with { FromX = top.FromX };
+            if (stripeTop.FromX < top.FromX && stripeTop.ToX >= top.FromX - 1) top = top with { FromX = stripeTop.FromX };
             if (stripeTop.FromX <= top.ToX + 1 && stripeTop.ToX > top.ToX) top = top with { ToX = stripeTop.ToX };
         }
 
         foreach (var point in discriminator.Points)
         {
-            if (point.X > top.FromX) yield return new Stripe(point, top with { ToX = point.X });
-            if (point.X < top.ToX) yield return new Stripe(point, top with { FromX = point.X });
+            if (point.X > top.FromX && point.X <= top.ToX) yield return new Stripe(point, top with { ToX = point.X });
+            if (point.X >= top.FromX && point.X <= top.ToX) yield return new Stripe(point, top with { FromX = point.X });
         }
     }
 
