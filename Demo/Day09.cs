@@ -6,12 +6,6 @@ static class Day09
 
         points.Draw(40);
 
-        // 4582310446 too high
-        // 2976014041 - not
-        // 137489982 - not
-        // 1448987856 - not
-        // 1362708695 - not (brute force)
-        // 1513758030 - not (brute force)
         var maxArea = points.GetMaxArea();
 
         System.Diagnostics.Stopwatch swBruteForce = System.Diagnostics.Stopwatch.StartNew();
@@ -56,41 +50,15 @@ static class Day09
 
     private static IEnumerable<(Point a, Point b)> GetAllPairs(this List<Point> points) =>
         from i in Enumerable.Range(0, points.Count - 1)
-        from j in Enumerable.Range(i + 1, points.Count - i - 1)
-        select (points[i], points[j]);
+        let a = points[i]
+        from b in points[(i + 1)..]
+        select (a, b);
 
     private static long GetArea((Point a, Point b) pair) =>
-        Math.Abs((long)(pair.a.X - pair.b.X + 1) * (pair.a.Y - pair.b.Y + 1));
-
-    private static bool CrossesItself(this IEnumerable<Point> points)
-    {
-        var list = points.ToList();
-        var segments = list.Zip(list[1..].Concat([list[0]]), (from, to) => (from, to)).ToList();
-
-        IEnumerable<Point> getPoints((Point from, Point to) line)
-        {
-            var dx = Math.Sign(line.to.X - line.from.X);
-            var dy = Math.Sign(line.to.Y - line.from.Y);
-
-            var point = line.from;
-            while (point != line.to)
-            {
-                point = new Point(point.X + dx, point.Y + dy);
-                yield return point;
-            }
-        }
-
-        var allPoints = segments.SelectMany(getPoints).ToList();
-        var distinctPoints = allPoints.Distinct().ToList();
-
-        return allPoints.Count != distinctPoints.Count;
-    }
+        (long)(Math.Abs(pair.a.X - pair.b.X) + 1) * (Math.Abs(pair.a.Y - pair.b.Y) + 1);
 
     private static void Draw(this IEnumerable<Point> points, int maxSize)
     {
-        bool crossesItself = points.CrossesItself();
-        Console.WriteLine($"Checking self-crossing: {(crossesItself ? "FOUND" : "not found")}");
-
         var set = points.ToHashSet();
         int minX = 0;
         int maxX = set.Max(p => p.X) + 2;
@@ -143,18 +111,21 @@ static class Day09
             var fromY = Math.Min(a.Y, b.Y);
             var toY = Math.Max(a.Y, b.Y);
 
-            var containsExitLine = discriminatorsFromTop.OfType<ExitBelow>()
+            var containsExitLines = discriminatorsFromTop.OfType<ExitBelow>()
                 .Where(d => d.Line.Y - 1 <= toY && d.Line.Y - 1 >= fromY)
                 .Where(d => !(d.Line.ToX < fromX || d.Line.FromX > toX))
                 .Any();
-            
-            if (containsExitLine) continue;
 
-            var topInside = Enumerable.Range(fromX, toX - fromX + 1)
-                .Select(x => new Point(x, toY))
-                .All(isInside);
+            if (containsExitLines) continue;
 
-            if (!topInside) continue;
+            var topPoints = discriminatorsFromTop
+                .SelectMany(discriminator => discriminator.GetPoints())
+                .Where(p => p.Y >= toY)
+                .Where(p => p.X >= fromX && p.X <= toX)
+                .Select(p => p with { Y = toY })
+                .Concat([new Point(fromX, toY), new Point(toX, toY)]);
+
+            if (!topPoints.All(isInside)) continue;
 
             return GetArea((a, b));
         }
