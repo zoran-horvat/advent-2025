@@ -1,7 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Security.Cryptography.X509Certificates;
-using System.Text.RegularExpressions;
-
 static class Day10
 {
     public static void Run(TextReader reader)
@@ -46,57 +42,49 @@ static class Day10
     private static Indicators Apply(this Indicators indicators, Button button) =>
         new Indicators(indicators.Bits ^ button.Toggles);
 
-    private static IEnumerable<Machine> ReadMachines(this TextReader reader) =>
+    public record Machine(Indicators Indicators, Button[] Buttons, Joltages Joltages);
+
+    public record Joltages(int[] Values);
+
+    public record Button(int Toggles, int[] ToggleIndices);
+    public record struct Indicators(int Bits);
+}
+
+file static class Day10Parsing
+{
+    public static IEnumerable<Day10.Machine> ReadMachines(this TextReader reader) =>
         reader.ReadLines().Select(ParseMachine);
 
-    private static Machine ParseMachine(string line) =>
-        new Machine(line.ParseIndicators(), line.ParseButtons().ToArray(), line.ParseJoltages());
+    private static Day10.Machine ParseMachine(string line) =>
+        new Day10.Machine(line.ParseIndicators(), line.ParseButtons().ToArray(), line.ParseJoltages());
 
-    private static Joltages ParseJoltages(this string line) =>
-        Regex.Match(line, @"\{(?<numbers>\d+(,\d+)*)\}") is { Success: true } match &&
+    private static Day10.Joltages ParseJoltages(this string line) =>
+        System.Text.RegularExpressions.Regex.Match(line, @"\{(?<numbers>\d+(,\d+)*)\}") is { Success: true } match &&
             match.Groups["numbers"] is { Success: true } group
-            ? new Joltages(group.Value.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray())
+            ? new Day10.Joltages(group.Value.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray())
             : throw new InvalidDataException($"Invalid joltages line: {line}");
 
-    private static IEnumerable<Button> ParseButtons(this string line) =>
-        Regex.Matches(line, @"\((?<numbers>\d+(,\d+)*)\)")
+    private static IEnumerable<Day10.Button> ParseButtons(this string line) =>
+        System.Text.RegularExpressions.Regex.Matches(line, @"\((?<numbers>\d+(,\d+)*)\)")
             .Where(match => match.Success && match.Groups["numbers"].Success)
             .Select(match => match.Groups["numbers"].Value)
             .Select(ParseButton);
 
-    private static Button ParseButton(this string toggles) =>
+    private static Day10.Button ParseButton(this string toggles) =>
         toggles.Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(int.Parse)
             .ToArray()
             .ToButton();
 
-    private static Button ToButton(this int[]toggleIndices) =>
-        new Button(toggleIndices.Aggregate(0, (acc, val) => acc | (1 << val)), toggleIndices);
+    private static Day10.Button ToButton(this int[]toggleIndices) =>
+        new Day10.Button(toggleIndices.Aggregate(0, (acc, val) => acc | (1 << val)), toggleIndices);
 
-    private static Indicators ParseIndicators(this string line) =>
-        Regex.Match(line, @"\[(?<indicators>[\.#]+)\]") is { Success: true } match &&
+    private static Day10.Indicators ParseIndicators(this string line) =>
+        System.Text.RegularExpressions.Regex.Match(line, @"\[(?<indicators>[\.#]+)\]") is { Success: true } match &&
             match.Groups["indicators"] is { Success: true } group
             ? group.Value.ParseBits()
             : throw new InvalidDataException($"Invalid indicators line: {line}");
 
-    private static Indicators ParseBits(this string remainingBits) =>
-        new Indicators(remainingBits.Select((b, i) => b == '#' ? 1 << i : 0).Sum());
-
-    class JoltageComparer : IEqualityComparer<Joltages>
-    {
-        public bool Equals(Joltages? x, Joltages? y) =>
-            x is null ? y is null
-            : y is null ? false
-            : x.Values.SequenceEqual(y.Values);
-
-        public int GetHashCode([DisallowNull] Joltages obj) =>
-            obj.Values.Aggregate(0, (acc, val) => HashCode.Combine(acc, val));
-    }
-
-    record Machine(Indicators Indicators, Button[] Buttons, Joltages Joltages);
-
-    record Joltages(int[] Values);
-
-    record Button(int Toggles, int[] ToggleIndices);
-    record struct Indicators(int Bits);
+    private static Day10.Indicators ParseBits(this string remainingBits) =>
+        new Day10.Indicators(remainingBits.Select((b, i) => b == '#' ? 1 << i : 0).Sum());    
 }
