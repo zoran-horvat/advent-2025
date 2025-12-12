@@ -4,8 +4,6 @@ static class Day09
     {
         var points = reader.ReadPoints().ToList();
 
-        points.Draw(40);
-
         var maxArea = points.GetMaxArea();
 
         System.Diagnostics.Stopwatch swBruteForce = System.Diagnostics.Stopwatch.StartNew();
@@ -15,7 +13,6 @@ static class Day09
         System.Diagnostics.Stopwatch swOptimized = System.Diagnostics.Stopwatch.StartNew();
         var maxInternalArea = points.GetMaxInternalArea();
         swOptimized.Stop();
-
 
         Console.WriteLine($"Largest rectangle area:                        {maxArea}");
         Console.WriteLine($"Largest internal rectangle area (brute force): {maxInternalAreaBruteForce} ({swBruteForce.Elapsed})");
@@ -53,53 +50,6 @@ static class Day09
 
     private static long GetArea((Point a, Point b) pair) =>
         (long)(Math.Abs(pair.a.X - pair.b.X) + 1) * (Math.Abs(pair.a.Y - pair.b.Y) + 1);
-
-    private static void Draw(this IEnumerable<Point> points, int maxSize)
-    {
-        var set = points.ToHashSet();
-        int minX = 0;
-        int maxX = set.Max(p => p.X) + 2;
-        int minY = 0;
-        int maxY = set.Max(p => p.Y) + 2;
-
-        if (maxX - minX > maxSize || maxY - minY > maxSize) return;
-
-        if (maxX - minX > maxSize || maxY - minY > maxSize) return;
-        
-        var discriminators = points.GetDiscriminatorsFromTop().ToList();
-
-        bool isInside(Point point) => discriminators.Where(d => d.Affects(point)).LastOrDefault() is EnterAt;
-
-        Console.WriteLine($"({minX},{minY})");
-        for (int y = minY; y <= maxY; y++)
-        {
-            Console.Write($"y={y,3} ");
-            for (int x = minX; x <= maxX; x++)
-            {
-                var point = new Point(x, y);
-                if (set.Contains(point) && isInside(point)) Console.Write('O');
-                else if (set.Contains(point)) Console.Write('#');
-                else if (isInside(point)) Console.Write('X');
-                else Console.Write('.');
-            }
-            Console.WriteLine();
-        }
-
-        Console.Write("      ");
-        for (int x = minX; x <= maxX; x++) Console.Write((x / 10) % 10);
-        Console.WriteLine();
-        Console.Write("      ");
-        for (int x = minX; x <= maxX; x++) Console.Write(x % 10);
-        Console.WriteLine();
-        Console.WriteLine("-------------------------------");
-    }
-
-    private static string ToLabel(this Discriminator discriminator) => discriminator switch
-    {
-        EnterAt enterAt => $"EnterAt Y={enterAt.Line.Y} X=[{enterAt.Line.FromX}..{enterAt.Line.ToX}]",
-        ExitBelow exitBelow => $"ExitBelow Y={exitBelow.Line.Y} X=[{exitBelow.Line.FromX}..{exitBelow.Line.ToX}]",
-        _ => "Unknown discriminator"
-    };
 
     private static long GetMaxInternalAreaBruteForce(this List<Point> points)
     {
@@ -146,10 +96,6 @@ static class Day09
         long maxArea = 0;
         var stripes = new List<Stripe>();
 
-        int xRange = points.Max(p => p.X) - points.Min(p => p.X) + 1;
-        int yRange = points.Max(p => p.Y) - points.Min(p => p.Y) + 1;
-        bool report = xRange <= 40 && yRange <= 40;
-
         foreach (var discriminator in discriminators)
         {
             maxArea = stripes.GetMaxArea(discriminator, maxArea);
@@ -157,22 +103,10 @@ static class Day09
                 .Concat(stripes.SelectMany(stripe => stripe.CloseStripe(discriminator)))
                 .Distinct()
                 .ToList();
-
-            var y = discriminator switch
-            {
-                EnterAt enterAt => enterAt.Line.Y,
-                ExitBelow exitBelow => exitBelow.Line.Y - 1,
-                _ => throw new ArgumentException("Unknown discriminator type.")
-            };
-            var printableStripes = stripes.OrderBy(s => s.Pivot.X).ThenByDescending(s => s.Pivot.Y).ThenBy(s => s.Top.FromX).ToList();
-            if (report) Console.WriteLine($"y={y,-3} {discriminator.ToLabel(),-30} | Stripes: {string.Join(", ", printableStripes.Select(s => s.ToLabel()))}");
         }
 
         return maxArea;
     }
-
-    private static string ToLabel(this Stripe stripe) =>
-        $"({stripe.Pivot.X},{stripe.Pivot.Y}) [{stripe.Top.FromX}-{stripe.Top.ToX}]";
 
     private static IEnumerable<Stripe> CloseStripe(this Stripe stripe, Discriminator discriminator) =>
         discriminator is ExitBelow exitBelow ? stripe.CloseStripe(exitBelow)
@@ -180,31 +114,15 @@ static class Day09
 
     private static IEnumerable<Stripe> CloseStripe(this Stripe stripe, ExitBelow discriminator)
     {
-        if (discriminator.Line.FromX <= stripe.Pivot.X && discriminator.Line.ToX >= stripe.Pivot.X)
-        {
-            Console.WriteLine($"    Removing stripe {stripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
-            yield break;        // Discriminator removes pivot
-        }
+        if (discriminator.Line.FromX <= stripe.Pivot.X && discriminator.Line.ToX >= stripe.Pivot.X) yield break;
         else if (discriminator.Line.ToX < stripe.Top.FromX) yield return stripe;
         else if (discriminator.Line.FromX > stripe.Top.ToX) yield return stripe;
-        else if (discriminator.Line.FromX <= stripe.Top.ToX && discriminator.Line.FromX > stripe.Top.FromX)
-        {
-            var newStripe = stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
-            Console.WriteLine($"    Clipping stripe {stripe.ToLabel()} -> {newStripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
-            yield return newStripe;
-        }
-        else if (discriminator.Line.ToX >= stripe.Top.FromX && discriminator.Line.ToX < stripe.Top.ToX)
-        {
-            var newStripe = stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
-            Console.WriteLine($"    Clipping stripe {stripe.ToLabel()} -> {newStripe.ToLabel()} by discriminator {discriminator.ToLabel()}");
-            yield return newStripe;
-        }
+        else if (discriminator.Line.FromX <= stripe.Top.ToX && discriminator.Line.FromX > stripe.Top.FromX) yield return stripe with { Top = stripe.Top with { ToX = discriminator.Line.FromX - 1 } };
+        else if (discriminator.Line.ToX >= stripe.Top.FromX && discriminator.Line.ToX < stripe.Top.ToX) yield return stripe with { Top = stripe.Top with { FromX = discriminator.Line.ToX + 1 } };
     }
 
     private static IEnumerable<Stripe> ToNewStripes(this Discriminator discriminator, IEnumerable<Stripe> existingStripes) => discriminator switch
     {
-        // (9,20) [9-23] -> Must also generate (9,20) [3-9]
-        // ()
         EnterAt enterAt => enterAt.ToNewStripes(existingStripes),
         ExitBelow exitBelow => exitBelow.ToNewStripes(existingStripes),
         _ => Enumerable.Empty<Stripe>()
