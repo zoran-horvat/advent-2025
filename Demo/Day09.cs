@@ -118,12 +118,8 @@ static class Day09
 
             if (containsExitLines) continue;
 
-            var topPoints = discriminatorsFromTop
-                .SelectMany(discriminator => discriminator.GetPoints())
-                .Where(p => p.Y >= toY)
-                .Where(p => p.X >= fromX && p.X <= toX)
-                .Select(p => p with { Y = toY })
-                .Concat([new Point(fromX, toY), new Point(toX, toY)]);
+            var topPoints = Enumerable.Range(fromX, toX - fromX + 1)
+                .Select(x => new Point(x, toY));
 
             if (!topPoints.All(isInside)) continue;
 
